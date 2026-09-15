@@ -7,7 +7,8 @@
 #include <map>
 #include <memory>
 #include <string>
-
+#include <ucontext.h>
+#include "workload.h"
 volatile sig_atomic_t sample_count = 0;
 static const int MAX_SAMPLES = 4096;
 static const int MAX_FRAMES = 64;
@@ -60,13 +61,12 @@ void handler(int sig, siginfo_t* info, void* context) {
     if(sample_count >=MAX_SAMPLES) return;
     ucontext_t* uc = (ucontext_t*)context;
     uintptr_t fp = uc->uc_mcontext.gregs[REG_RBP];
-    frame_counts[sample_count] = walk_stack(fp, samples[sample_count], MAX_FRAMES);
+    samples[sample_count][0] = uc->uc_mcontext.gregs[REG_RIP];
+    int n = walk_stack(fp, &samples[sample_count][1], MAX_FRAMES - 1);
+    frame_counts[sample_count] = n + 1;
     sample_count++;
 }
-void hot_funct(){
-    volatile double x = 0;
-    for(int i{};i<50000000;i++) x+=i * 0.5;
-}
+
 
 int main(){
     struct sigaction sa;
@@ -81,29 +81,30 @@ int main(){
     timer.it_interval.tv_sec = 0;
     timer.it_interval.tv_usec = 10000;
     setitimer(ITIMER_PROF, &timer, nullptr);
-        printf("samples: %d\n", sample_count);
+        setitimer(ITIMER_PROF, &timer, nullptr);
 
-    for (int i = 0; i < 10; i++){
-        hot_funct();
+        for (int i = 0; i < 10; i++) {
+            hot_funct();
+            cold_funct();
+            recursive(10);
+            recure(10);
+        }
+        std::map<std::string, int> counts;
+            if (setitimer(ITIMER_PROF, &timer, nullptr) == -1) { perror("setitimer"); return 1; }
+    for (int i = 0; i < sample_count; i++) {
+        std::string stack;
+        for (int j = frame_counts[i] - 1; j >= 0; j--) {
+            if (!stack.empty()) stack += ";";
+            stack += symbolize("./profiler", samples[i][j]);
+        }
+        counts[stack]++;
     }
-    printf("samples: %d\n", (int)sample_count);
-    for (int i = 0; i < 5 && i < sample_count; i++) {
-    printf("sample %d (%d frames): ", i, frame_counts[i]);
-    for (int j = 0; j < frame_counts[i]; j++) {
-        printf("%lx ", (unsigned long)samples[i][j]);
+
+    for (const auto& kv : counts) {
+        printf("%s %d\n", kv.first.c_str(), kv.second);
     }
-    printf("\n");
-    }
-    // std::string command = "ls -l";
-    // FILE* pipe = popen(command.c_str(), "r");
-    printf("%s\n", symbolize("./profiler", 0x401180).c_str());
-    for (int i = 0; i < 5 && i < sample_count; i++) {
-    printf("sample %d: ", i);
-    for (int j = 0; j < frame_counts[i]; j++) {
-        printf("%s ", symbolize("./profiler", samples[i][j]).c_str());
-    }
-    printf("\n");
-}
+
+    return 0;
 }
 
 
