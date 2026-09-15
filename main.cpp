@@ -3,12 +3,17 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <cstdint>
+#include <sstream>
+#include <map>
+#include <memory>
+#include <string>
 
 volatile sig_atomic_t sample_count = 0;
 static const int MAX_SAMPLES = 4096;
 static const int MAX_FRAMES = 64;
 static uintptr_t samples[MAX_SAMPLES][MAX_FRAMES];
 static int frame_counts[MAX_SAMPLES];
+static std::map<uintptr_t,std::string> symbolCache;
 
 static int walk_stack(uintptr_t fp, uintptr_t* out, int max_frames) {
     int n = 0;
@@ -27,6 +32,27 @@ static int walk_stack(uintptr_t fp, uintptr_t* out, int max_frames) {
         fp = *(uintptr_t*)fp;           
     }
     return n;
+}
+static std::string resolveAddress(const std::string& binaryPath, uintptr_t addr) {
+    std::stringstream cmd;
+    cmd << "addr2line -e " << binaryPath << " -f -C 0x" << std::hex << addr;
+
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.str().c_str(), "r"), pclose);
+    if (!pipe) return "??";
+
+    char buf[512];
+    if (!fgets(buf, sizeof(buf), pipe.get())) return "??";
+
+    std::string result(buf);
+    if (!result.empty() && result.back() == '\n') result.pop_back();
+    return result.empty() ? "??" : result;
+}
+static const std::string& symbolize(const std::string& binaryPath, uintptr_t addr) {
+    auto it = symbolCache.find(addr);
+    if (it == symbolCache.end()) {
+        it = symbolCache.emplace(addr, resolveAddress(binaryPath, addr)).first;
+}
+return it->second;
 }
 void handler(int sig, siginfo_t* info, void* context) {
     (void)sig;
@@ -67,11 +93,19 @@ int main(){
         printf("%lx ", (unsigned long)samples[i][j]);
     }
     printf("\n");
+    }
+    // std::string command = "ls -l";
+    // FILE* pipe = popen(command.c_str(), "r");
+    printf("%s\n", symbolize("./profiler", 0x401180).c_str());
+    for (int i = 0; i < 5 && i < sample_count; i++) {
+    printf("sample %d: ", i);
+    for (int j = 0; j < frame_counts[i]; j++) {
+        printf("%s ", symbolize("./profiler", samples[i][j]).c_str());
+    }
+    printf("\n");
 }
-    
-
-
 }
+
 
 
 
