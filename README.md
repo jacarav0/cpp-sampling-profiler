@@ -87,6 +87,27 @@ stdio lock at the moment of interruption.
 
 ## Validation
 
-`hot_funct` performs 100× the work of `cold_funct`. The profiler
-attributes [X]% of samples to it, matching the ratio predicted from the
-source before measuring.
+## Validation
+
+The demo workload runs three functions with work ratios fixed in the
+source before measuring. Per outer iteration, in loop iterations:
+`hot_funct` does 50M, `cold_funct` 5M, and `recursive` 10 levels of 1M
+each. Expected shares follow directly from that ratio.
+
+Measured over 1,720 samples (~17 s of CPU time at 100 Hz):
+
+| Function | Work per iteration | Expected | Samples | Measured |
+|---|---|---|---|---|
+| `hot_funct` | 50M | 76.9% | 1325 | 77.0% |
+| `recursive` (all depths) | 10M | 15.4% | 261 | 15.2% |
+| `cold_funct` | 5M | 7.7% | 134 | 7.8% |
+
+Attribution is within 0.2 percentage points at every level. The match is
+closer than the method strictly justifies: loop iterations are not cycles,
+and `recursive` does an integer-to-double conversion per iteration where
+the other two do a multiply, so the underlying costs differ somewhat.
+
+`recursive` also distributes evenly across its ten depth levels (22–31
+samples each), as expected since every level does the same fixed work
+before recursing. The deepest frame is the exception, at 22 samples: the
+base case returns at `n <= 0` without running the loop at all.
