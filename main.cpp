@@ -83,11 +83,10 @@ int main(){
     setitimer(ITIMER_PROF, &timer, nullptr);
         setitimer(ITIMER_PROF, &timer, nullptr);
 
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 80; i++) {
             hot_funct();
             cold_funct();
             recursive(10);
-            recure(10);
         }
         std::map<std::string, int> counts;
             if (setitimer(ITIMER_PROF, &timer, nullptr) == -1) { perror("setitimer"); return 1; }
